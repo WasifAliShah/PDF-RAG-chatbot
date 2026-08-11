@@ -4,6 +4,12 @@ from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.messages import ToolMessage
+import json
+
+from pydantic import BaseModel, Field
+from typing import List
+
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_community.vectorstores import FAISS
 from langchain.agents import create_agent
@@ -13,14 +19,26 @@ from dataclasses import dataclass
 # for context saving
 from langchain_core.utils.uuid import uuid7
 from langgraph.checkpoint.memory import InMemorySaver
+from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
+from langchain_core.messages import SystemMessage, HumanMessage
 from dotenv import load_dotenv
 from pathlib import Path
 
 
 load_dotenv()
 
-# 2. Initialize the Gemini model (e.g., gemini-1.5-flash)
-llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash", temperature=0.9)
+
+
+# 1. Initialize the backend endpoint
+llm = HuggingFaceEndpoint(
+    repo_id="meta-llama/Llama-3.3-70B-Instruct",
+    task="conversational",
+    temperature=0.1,
+    max_new_tokens=1024
+)
+
+# 2. Wrap it for chat templates
+chat_model = ChatHuggingFace(llm=llm)
 
 
 documentation = []
@@ -46,7 +64,7 @@ print(f"Loaded pages: {len(documents)}")
 # 2. Split document into chunks
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=1000,
-    chunk_overlap=100
+    chunk_overlap=200
 )
 
 docs = text_splitter.split_documents(documents)
@@ -76,32 +94,63 @@ db = FAISS.from_documents(
 # 5. Search
 query = "Can you tell me about the spottube project?"
 
+
+# 7. Define structured response
+
+class Source(BaseModel):
+    file: str = Field(description="Name of the source PDF")
+    page: int = Field(description="Page number in the PDF")
+
+
+class RAGResponse(BaseModel):
+    answer: str = Field(
+        description="Answer to the user's question based only on retrieved context"
+    )
+    sources: List[Source] = Field(
+        description="PDF documents and pages used to answer the question"
+    )
+
+
 @tool
 def search_documents(query: str) -> str:
-  """Search the company documents for information relevant to the query."""
-  results = db.similarity_search(query, k=5)
+    """Search the PDF documents for information relevant to the user's query."""
 
-  context = "\n\n".join(
-      doc.page_content for doc in results
-  )
-  return context
+    results = db.similarity_search(query, k=5)
+
+    retrieved_documents = []
+
+    for doc in results:
+
+        retrieved_documents.append({
+            "content": doc.page_content,
+            "source": doc.metadata.get("source"),
+            "page": doc.metadata.get("page", 0) + 1
+        })
+
+    return json.dumps(retrieved_documents)
 
 # 6. Display the most relevant chunk
 # context = results[0].page_content
 
 #creating agent
 agent = create_agent(
-    model=llm,
+    model=chat_model,
     tools=[search_documents],
+    # response_format=RAGResponse,
 )
 
 
 messages = [
     SystemMessage(content="""You are a helpful assistant.
 
-Use the search_documents tool whenever the user asks
-about information that may be contained in the documents."""
-),
+Use the search_documents tool whenever the user's question
+may be answered using information from the documents.
+
+Answer the user's question using the retrieved document
+content. Do not invent information that is not present
+in the retrieved documents.
+"""),
+
     HumanMessage(content=query),
 ]
 
@@ -109,4 +158,47 @@ response = agent.invoke(
     {"messages": messages},
     )
 
-print(response["messages"][-1].content)
+answer = response["messages"][-1].content
+
+
+sources = []
+
+for message in response["messages"]:
+    if isinstance(message, ToolMessage):
+
+        retrieved_documents = json.loads(message.content)
+
+        for doc in retrieved_documents:
+            sources.append({
+                "file": doc["source"],
+                "page": doc["page"]
+            })
+
+unique_sources = []
+
+seen = set()
+
+for source in sources:
+    key = (source["file"], source["page"])
+
+    if key not in seen:
+        seen.add(key)
+        unique_sources.append(source)
+
+print("\n================ ANSWER ================\n")
+print(answer)
+
+print("\n================ SOURCES ================\n")
+
+for source in unique_sources:
+    print(f"- {source['file']} — Page {source['page']}")
+
+# structured_response = response["structured_response"]
+
+# print("\n================ ANSWER ================\n")
+# print(structured_response.answer)
+
+#  print("\n================ SOURCES ================\n")
+
+# for source in structured_response.sources:
+#     print(f"- {source.file} — Page {source.page}")

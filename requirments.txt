@@ -1,1 +1,4 @@
 pip install -U langchain-google-genai langchain
+pip install pypdf
+pip install -U langchain langchain-community langchain-text-splitters langchain-huggingface sentence-transformers faiss-cpu
+pip install -U langchain-huggingface
