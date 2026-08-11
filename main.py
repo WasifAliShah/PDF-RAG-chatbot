@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from langchain_core.utils.uuid import uuid7
 from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv
+from pathlib import Path
 
 
 load_dotenv()
@@ -21,7 +22,16 @@ load_dotenv()
 # 2. Initialize the Gemini model (e.g., gemini-1.5-flash)
 llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash", temperature=0.9)
 
-documentation=["AI_Engineer.pdf"]
+
+documentation = []
+# Replace with the path to your actual folder
+folder_path = Path("C:\\LangChain\\Chatbot\\documents")
+
+# Loop through all files ending in .pdf in this folder
+for pdf_file in folder_path.glob("*.pdf"):
+    documentation.append(pdf_file)
+
+print(documentation)
 
 documents=[]
 
@@ -47,9 +57,9 @@ print(f"Created chunks: {len(docs)}")
 
 print("Number of chunks:", len(docs))
 
-# for i, doc in enumerate(docs):
-#     print(f"\n========== CHUNK {i + 1} ==========")
-#     print(doc.page_content)
+for i, doc in enumerate(docs):
+    print(f"\n========== CHUNK {i + 1} ==========")
+    print(doc.page_content)
 
 
 # 3. Create embedding model
