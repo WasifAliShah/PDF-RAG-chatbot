@@ -3,7 +3,7 @@ import json
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Annotated
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -155,7 +155,7 @@ class ChatResponse(BaseModel):
 
 
 @app.post("/upload")
-async def upload_pdfs(files: List[UploadFile] = File(...)):
+async def upload_pdfs(files: Annotated[List[UploadFile], File(...)]):
     global db
 
     saved_paths = []
