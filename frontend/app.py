@@ -1,9 +1,12 @@
 import uuid
-
+from dotenv import load_dotenv
 import requests
 import streamlit as st
+import os
 
-BACKEND_URL = "http://localhost:8000"
+load_dotenv()
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="RAG Chatbot", layout="wide")
 
