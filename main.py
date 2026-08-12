@@ -8,6 +8,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.messages import ToolMessage
 import json
 
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from pydantic import BaseModel, Field
 from typing import List
@@ -54,74 +55,81 @@ llm = ChatGroq(
 )
 
 
-documentation = []
+
 # Replace with the path to your actual folder
-folder_path = Path("C:\\LangChain\\Chatbot\\documents")
+folder_path = Path("documents")
 
-# Loop through all files ending in .pdf in this folder
-for pdf_file in folder_path.glob("*.pdf"):
-    documentation.append(pdf_file)
-
-print(documentation)
-
-documents=[]
-
-# 1. Load documents
-for document in documentation:
-    loader = PyPDFLoader(document)
-    documents.extend(loader.load())
-
-print(f"Loaded pages: {len(documents)}")
+INDEX_PATH = "faiss_index"          # where the vector store persists on disk
+CHECKPOINT_DB = "chat_history.sqlite"  # where conversation history persists
 
 
-# 2. Split document into chunks
-
-text_splitter = RecursiveCharacterTextSplitter(
-chunk_size=5000,
-chunk_overlap=400
-)
-
-docs = text_splitter.split_documents(documents)
-
-print(f"Loaded pages: {len(documents)}")
-print(f"Created chunks: {len(docs)}")
-
-print("Number of chunks:", len(docs))
-
-for i, doc in enumerate(docs):
-    print(f"\n========== CHUNK {i + 1} ==========")
-    print(doc.page_content)
-
-# 3. Create embedding model
+# Create embedding model
 
 embeddings = HuggingFaceEmbeddings(
 model_name="sentence-transformers/all-MiniLM-L6-v2"
 )
 
-# 4. Create vector store
 
-db = FAISS.from_documents(
-docs,
-embeddings
-)
+documentation = []
 
-# 5. Search
 
-query = "Can you tell me about the spottube project?"
+
+if os.path.exists(INDEX_PATH):
+    print("Loading existing FAISS index...")
+    db = FAISS.load_local(
+        INDEX_PATH,
+        embeddings,
+        allow_dangerous_deserialization=True,  # safe: we created this file ourselves
+    )
+else:
+    print("No existing index found — building a new one...")
+
+    documentation = list(folder_path.glob("*.pdf"))
+    print(f"Found PDFs: {documentation}")
+
+    documents = []
+    for document in documentation:
+        loader = PyPDFLoader(str(document))  # str() avoids Path-related loader issues
+        documents.extend(loader.load())
+
+    print(f"Loaded pages: {len(documents)}")
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=5000,
+        chunk_overlap=400,
+    )
+    docs = text_splitter.split_documents(documents)
+    print(f"Created chunks: {len(docs)}")
+    print(f"Loaded pages: {len(documents)}")
+
+    print("Number of chunks:", len(docs))
+
+    for i, doc in enumerate(docs):
+        print(f"\n========== CHUNK {i + 1} ==========")
+        print(doc.page_content)
+
+
+    db = FAISS.from_documents(docs, embeddings)
+    db.save_local(INDEX_PATH)
+    print(f"Saved index to '{INDEX_PATH}/'")
+
+# If you add/remove/change PDFs later, delete the faiss_index/ folder
+# and re-run so it gets rebuilt from the updated documents.
+
 
 # 7. Define structured response
 
-class Source(BaseModel):
-    file: str = Field(description="Name of the source PDF")
-    page: int = Field(description="Page number in the PDF")
+# class Source(BaseModel):
+#     file: str = Field(description="Name of the source PDF")
+#     page: int = Field(description="Page number in the PDF")
 
-class RAGResponse(BaseModel):
-    answer: str = Field(
-    description="Answer to the user's question based only on retrieved context"
-    )
-    sources: List[Source] = Field(
-    description="PDF documents and pages used to answer the question"
-    )
+# class RAGResponse(BaseModel):
+#     answer: str = Field(
+#     description="Answer to the user's question based only on retrieved context"
+#     )
+#     sources: List[Source] = Field(
+#     description="PDF documents and pages used to answer the question"
+#     )
 
 @tool
 def search_documents(query: str) -> str:
@@ -142,59 +150,53 @@ def search_documents(query: str) -> str:
     return json.dumps(retrieved_documents)
 
 
-
-
-# 7. Create agent
-
-agent = create_agent(
-    model=llm,
-    tools=[search_documents],
-    checkpointer=InMemorySaver(),
-)
-
 thread_config = {"configurable": {"thread_id": "1"}}
+# 5. Search
 
-messages = [
-    SystemMessage(content="""You are a helpful assistant.
+query = "How much funding did the project recieve"
+
+with SqliteSaver.from_conn_string(CHECKPOINT_DB) as checkpointer:
+
+    agent = create_agent(
+        model=llm,
+        tools=[search_documents],
+        checkpointer=checkpointer,
+    )
+
+    messages = [
+        SystemMessage(content="""You are a helpful assistant.
 
 Use the search_documents tool whenever the user asks
 about information that may be contained in the documents.
 
 Answer using only information from the retrieved documents.
 Do not mention sources or filenames in your answer — that will
-be handled separately.
+be handled separately. Also if requested info is not found in the documents, 
+say "I could not find any information about that in the documents." and do not make up an answer.
 """),
-    HumanMessage(content=query),
-]
+        HumanMessage(content=query),
+    ]
 
-# 8. Run agent
+    response = agent.invoke(
+        {"messages": messages},
+        thread_config,
+    )
 
-response = agent.invoke(
-    {"messages": messages},
-    thread_config,
-)
+    answer = response["messages"][-1].content
 
-answer = response["messages"][-1].content
+    print("\n================ ANSWER ================\n")
+    print(answer)
 
-print("\n================ ANSWER ================\n")
-print(answer)
+    tool_messages = [m for m in response["messages"] if isinstance(m, ToolMessage)]
 
+    # print("\n================ SOURCE ================\n")
 
-# 9. Determine the source ourselves from the retrieval data,
-# rather than trusting the model to self-report it.
-# We take the most recent ToolMessage (this turn's retrieval)
-# and use the lowest-scored (most similar) chunk as the source.
-
-tool_messages = [m for m in response["messages"] if isinstance(m, ToolMessage)]
-
-print("\n================ SOURCE ================\n")
-
-if tool_messages:
-    retrieved = json.loads(tool_messages[-1].content)
-    if retrieved:
-        top_match = min(retrieved, key=lambda d: d["score"])
-        print(f"Source: {top_match['source']}, page {top_match['page']}")
-    else:
-        print("No documents were retrieved for this query.")
-else:
-    print("The agent did not call search_documents for this query.")
+    # if tool_messages:
+    #     retrieved = json.loads(tool_messages[-1].content)
+    #     if retrieved:
+    #         top_match = min(retrieved, key=lambda d: d["score"])
+    #         print(f"Source: {top_match['source']}, page {top_match['page']}")
+    #     else:
+    #         print("No documents were retrieved for this query.")
+    # else:
+    #     print("The agent did not call search_documents for this query.")
