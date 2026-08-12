@@ -1,8 +1,6 @@
 fastapi
 uvicorn[standard]
 python-multipart
-streamlit
-requests
 langchain
 langchain-groq
 langchain-community

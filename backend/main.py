@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from langchain_groq import ChatGroq
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.messages import ToolMessage, SystemMessage, HumanMessage
 from langchain_core.tools import tool
@@ -38,7 +38,12 @@ CHECKPOINT_DB = "chat_history.sqlite"
 # as None if no index exists yet — it gets created on the first /upload.
 # ---------------------------------------------------------------------------
 
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+# FastEmbed runs on ONNX Runtime instead of PyTorch — PyTorch alone can eat
+# 500MB-1GB+ of RAM just being imported, which blows straight through
+# Render's free-tier 512MB cap. FastEmbed's default model (bge-small-en-v1.5)
+# is a similarly-sized, similarly-good embedding model with a much smaller
+# memory footprint.
+embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
 if os.path.exists(INDEX_PATH):
     print("Loading existing FAISS index...")
@@ -166,7 +171,7 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
         loader = PyPDFLoader(str(path))
         new_documents.extend(loader.load())
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=400)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     new_chunks = text_splitter.split_documents(new_documents)
 
     if db is None:
