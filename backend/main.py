@@ -171,7 +171,12 @@ async def upload_pdfs(files: Annotated[List[UploadFile], File(...)]):
         loader = PyPDFLoader(str(path))
         new_documents.extend(loader.load())
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000, 
+        chunk_overlap=300,
+        separators=["\n\n", ". \n"],
+        keep_separator=False
+        )
     new_chunks = text_splitter.split_documents(new_documents)
 
     if db is None:
