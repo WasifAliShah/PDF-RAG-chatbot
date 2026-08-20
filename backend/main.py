@@ -10,8 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from langchain_groq import ChatGroq
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.messages import ToolMessage, SystemMessage, HumanMessage
@@ -19,6 +17,9 @@ from langchain_core.tools import tool
 from langchain.agents import create_agent
 from langgraph.checkpoint.sqlite import SqliteSaver
 from dotenv import load_dotenv
+
+from langchain_core.documents import Document
+from unstructured.partition.pdf import partition_pdf
 
 load_dotenv()
 
@@ -117,10 +118,13 @@ SYSTEM_PROMPT = """You are a helpful assistant.
 Use the search_documents tool whenever the user asks
 about information that may be contained in the documents.
 
-Answer using only information from the retrieved documents.
-Do not mention sources or filenames in your answer — that will
-be handled separately. Also if requested info is not found in the documents,
-say "I could not find any information about that in the documents." and do not make up an answer.
+For Your information each result is separated by a "--- Source: ... ---" marker;
+treat each as an independent excerpt, don't merge facts across markers unless they're clearly about the same thing.
+
+If a search result already answers the question, answer directly from it — do not call the tool
+again just to look for additional angles or sub-topics the user didn't ask about.
+Only re-search if the results are clearly missing or irrelevant to what was asked.
+When you answer, use all relevant information retrieved so far, not just the most recent search.
 """
 
 # NOTE: we send a SystemMessage on every /chat call, same as your original
@@ -165,26 +169,42 @@ async def upload_pdfs(files: Annotated[List[UploadFile], File(...)]):
             shutil.copyfileobj(file.file, f)
         saved_paths.append(dest)
 
-    # Only load + chunk the newly uploaded files — not the whole folder.
-    new_documents = []
+    # Process newly uploaded files using unstructured's partition_pdf
+    new_chunks = []
     for path in saved_paths:
-        loader = PyPDFLoader(str(path))
-        new_documents.extend(loader.load())
-
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, 
-        chunk_overlap=300,
-        separators=["\n\n", ". \n"],
-        keep_separator=False
+        filename = str(path)
+        
+        # Partition and chunk the document simultaneously
+        chunks = partition_pdf(
+            filename=filename,
+            strategy="hi_res",
+            infer_table_structure=True,
+            chunking_strategy="by_title",
+            max_characters=1200,
+            new_after_n_chars=1000,
+            combine_text_under_n_chars=200,
         )
-    new_chunks = text_splitter.split_documents(new_documents)
+        
+        # Convert the unstructured elements into LangChain Document objects
+        for chunk in chunks:
+            new_chunks.append(
+                Document(
+                    page_content=str(chunk),
+                    metadata={
+                        "source": filename, 
+                        "type": getattr(chunk, "category", "Text")
+                    },
+                )
+            )
 
-    if db is None:
-        db = FAISS.from_documents(new_chunks, embeddings)
-    else:
-        db.add_documents(new_chunks)  # incremental add — leaves existing vectors untouched
+    # Only attempt to update FAISS if chunks were actually generated
+    if new_chunks:
+        if db is None:
+            db = FAISS.from_documents(new_chunks, embeddings)
+        else:
+            db.add_documents(new_chunks)  # incremental add — leaves existing vectors untouched
 
-    db.save_local(INDEX_PATH)
+        db.save_local(INDEX_PATH)
 
     return {
         "uploaded": [p.name for p in saved_paths],
