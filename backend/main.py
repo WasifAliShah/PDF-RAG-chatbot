@@ -1,210 +1,33 @@
-import os
 import json
-import shutil
-import sqlite3
 from pathlib import Path
-from typing import List, Optional, Annotated
+from typing import List, Annotated
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
-from langchain_groq import ChatGroq
-from langchain_community.embeddings import FastEmbedEmbeddings
-from langchain_community.vectorstores import FAISS
 from langchain_core.messages import ToolMessage, SystemMessage, HumanMessage
-from langchain_core.tools import tool
-from langchain.agents import create_agent
-from langgraph.checkpoint.sqlite import SqliteSaver
-from dotenv import load_dotenv
 
-from langchain_core.documents import Document
-from unstructured.partition.pdf import partition_pdf
-
-load_dotenv()
-
-# ---------------------------------------------------------------------------
-# Paths / config
-# ---------------------------------------------------------------------------
-
-UPLOAD_DIR = Path("documents")
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-INDEX_PATH = "faiss_index"
-CHECKPOINT_DB = "chat_history.sqlite"
-
-# ---------------------------------------------------------------------------
-# Embeddings + vector store
-# Loaded once at import time and shared across every request. `db` starts
-# as None if no index exists yet — it gets created on the first /upload.
-# ---------------------------------------------------------------------------
-
-# FastEmbed runs on ONNX Runtime instead of PyTorch — PyTorch alone can eat
-# 500MB-1GB+ of RAM just being imported, which blows straight through
-# Render's free-tier 512MB cap. FastEmbed's default model (bge-small-en-v1.5)
-# is a similarly-sized, similarly-good embedding model with a much smaller
-# memory footprint.
-embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
-
-if os.path.exists(INDEX_PATH):
-    print("Loading existing FAISS index...")
-    db = FAISS.load_local(INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
-else:
-    print("No FAISS index found yet — starting empty. Upload PDFs to build one.")
-    db = None
-
-# ---------------------------------------------------------------------------
-# LLM
-# ---------------------------------------------------------------------------
-
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0.2,
-    max_tokens=None,
-    timeout=None,
-    max_retries=2,
-)
-
-# ---------------------------------------------------------------------------
-# Retrieval tool
-# This closes over the module-level `db`. Python closures capture the
-# *variable*, not a snapshot of its value at definition time — so once
-# /upload reassigns `db`, this tool automatically sees the updated index
-# on the very next call, no extra wiring needed.
-# ---------------------------------------------------------------------------
-
-
-@tool
-def search_documents(query: str) -> str:
-    """Search the uploaded PDF documents for information relevant to the user's query."""
-    if db is None:
-        return json.dumps([])
-
-    results = db.similarity_search_with_score(query, k=5)
-    retrieved = []
-    for doc, score in results:
-        retrieved.append({
-            "content": doc.page_content,
-            "source": str(doc.metadata.get("source")),
-            "page": doc.metadata.get("page", 0) + 1,
-            "score": float(score),
-        })
-    return json.dumps(retrieved)
-
-
-# ---------------------------------------------------------------------------
-# Checkpointer + agent — created once at startup, reused for every request.
-#
-# We open the sqlite connection directly (sqlite3.connect + SqliteSaver(conn))
-# instead of the `SqliteSaver.from_conn_string(...)` context manager you used
-# before. That context manager closes the connection the moment the `with`
-# block ends — perfect for a one-shot script, but wrong here: a server needs
-# the connection to stay open for its entire lifetime, across many requests.
-# check_same_thread=False is needed because FastAPI may handle requests on
-# different threads.
-# ---------------------------------------------------------------------------
-
-conn = sqlite3.connect(CHECKPOINT_DB, check_same_thread=False)
-checkpointer = SqliteSaver(conn)
-
-agent = create_agent(
-    model=llm,
-    tools=[search_documents],
-    checkpointer=checkpointer,
-)
-
-SYSTEM_PROMPT = """You are a helpful assistant.
-
-Use the search_documents tool whenever the user asks
-about information that may be contained in the documents.
-
-For Your information each result is separated by a "--- Source: ... ---" marker;
-treat each as an independent excerpt, don't merge facts across markers unless they're clearly about the same thing.
-
-If a search result already answers the question, answer directly from it — do not call the tool
-again just to look for additional angles or sub-topics the user didn't ask about.
-Only re-search if the results are clearly missing or irrelevant to what was asked.
-When you answer, use all relevant information retrieved so far, not just the most recent search.
-"""
-
-# NOTE: we send a SystemMessage on every /chat call, same as your original
-# script. Since the checkpointer persists history, this means the system
-# prompt technically gets appended to the stored thread every turn, not just
-# the first — harmless for a learning project, but on a long-running thread
-# it adds a bit of repeated context. A future improvement: only prepend the
-# system message when the thread has no prior history yet.
-
-# ---------------------------------------------------------------------------
-# FastAPI app
-# ---------------------------------------------------------------------------
+import vectorstore
+from ingestion import save_uploaded_files, process_pdfs
+from agent import agent, SYSTEM_PROMPT
+from models import ChatRequest, ChatResponse
 
 app = FastAPI(title="RAG Chatbot API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # fine for local dev; restrict this before deploying anywhere public
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-class ChatRequest(BaseModel):
-    message: str
-    thread_id: str = "1"
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    source: Optional[str] = None
-
-
 @app.post("/upload")
 async def upload_pdfs(files: Annotated[List[UploadFile], File(...)]):
-    global db
+    saved_paths = save_uploaded_files(files)
+    new_chunks = process_pdfs(saved_paths)
 
-    saved_paths = []
-    for file in files:
-        dest = UPLOAD_DIR / file.filename
-        with open(dest, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        saved_paths.append(dest)
-
-    # Process newly uploaded files using unstructured's partition_pdf
-    new_chunks = []
-    for path in saved_paths:
-        filename = str(path)
-        
-        # Partition and chunk the document simultaneously
-        chunks = partition_pdf(
-            filename=filename,
-            strategy="hi_res",
-            infer_table_structure=True,
-            chunking_strategy="by_title",
-            max_characters=1200,
-            new_after_n_chars=1000,
-            combine_text_under_n_chars=200,
-        )
-        
-        # Convert the unstructured elements into LangChain Document objects
-        for chunk in chunks:
-            new_chunks.append(
-                Document(
-                    page_content=str(chunk),
-                    metadata={
-                        "source": filename, 
-                        "type": getattr(chunk, "category", "Text")
-                    },
-                )
-            )
-
-    # Only attempt to update FAISS if chunks were actually generated
     if new_chunks:
-        if db is None:
-            db = FAISS.from_documents(new_chunks, embeddings)
-        else:
-            db.add_documents(new_chunks)  # incremental add — leaves existing vectors untouched
-
-        db.save_local(INDEX_PATH)
+        vectorstore.add_documents(new_chunks)
 
     return {
         "uploaded": [p.name for p in saved_paths],
@@ -239,4 +62,4 @@ async def chat(req: ChatRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "index_built": db is not None}
+    return {"status": "ok", "index_built": vectorstore.get_db() is not None}
