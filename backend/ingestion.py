@@ -25,7 +25,7 @@ def process_pdfs(paths: List[Path]) -> List[Document]:
         filename = str(path)
         chunks = partition_pdf(
             filename=filename,
-            strategy="hi_res",
+            strategy="fast",
             infer_table_structure=True,
             chunking_strategy="by_title",
             max_characters=1200,
