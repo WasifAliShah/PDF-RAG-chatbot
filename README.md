@@ -97,7 +97,8 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 │   └── requirements.txt
 │
 └── frontend/
-    └── app.py             # Streamlit chat interface
+    ├── app.py             # Streamlit chat interface
+    └── requirements.txt
 ```
 
 ---
