@@ -1,4 +1,4 @@
-# 📚 DocuChat — RAG-Powered PDF Chatbot
+# 📚 DocuChat — RAG-Powered Document Chatbot
 
 A full-stack Retrieval-Augmented Generation (RAG) chatbot that lets you upload PDF documents and have natural, context-aware conversations about their contents — complete with source attribution down to the exact page.
 
@@ -20,13 +20,14 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 
 ## ✨ Features
 
-- **📤 Drag-and-drop PDF ingestion** — upload one or many PDFs directly from the sidebar; they're parsed, chunked, and embedded automatically.
+- **📤 Drag-and-drop document ingestion** — upload PDFs and Word (`.docx`) files directly from the sidebar; they're parsed, chunked, and embedded automatically, regardless of format.
 - **🧠 Context-aware conversations** — powered by a LangGraph agent that decides *when* to search your documents instead of blindly retrieving on every message.
-- **📌 Source-grounded answers** — every response is paired with the exact document and page number it was pulled from, so you can verify the answer yourself.
+- **📌 Source-grounded answers** — every response is paired with the exact document (and, for PDFs, the page number) it was pulled from, so you can verify the answer yourself. Word documents don't carry fixed page numbers, so citations for `.docx` sources show the document name only.
 - **💾 Persistent chat memory** — conversations are checkpointed to SQLite, so context survives across turns within a thread.
 - **🔄 Incremental indexing** — new documents are added to the existing vector index without rebuilding it from scratch.
 - **⚡ Lightweight embeddings** — uses ONNX-based FastEmbed instead of PyTorch, keeping memory usage low enough to run comfortably on free-tier hosting.
 - **🧩 Fully modular backend** — each concern (config, ingestion, vector store, tools, agent, API) lives in its own file, making the codebase easy to navigate and extend.
+- **Supported file types:** `.pdf`, `.docx`
 
 ---
 
@@ -48,6 +49,8 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
      ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
      │  ingestion.py │ │ vectorstore.py│ │    agent.py   │
      │  PDF → chunks │ │ FAISS + embed │ │  LLM + memory │
+     │  ingestion.py │ │ vectorstore.py│ │    agent.py   │
+     │ Docs → chunks │ │ FAISS + embed │ │  LLM + memory │
      └───────────────┘ └───────────────┘ └────────┬──────┘
                                                   │
                                           ┌───────▼────────┐
@@ -57,8 +60,8 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 ```
 
 **Flow:**
-1. A PDF is uploaded through the Streamlit UI → sent to `/upload`.
-2. `ingestion.py` partitions the PDF into semantically meaningful chunks (`unstructured`, table-aware).
+1. A PDF or Word document is uploaded through the Streamlit UI → sent to `/upload`.
+2. `ingestion.py` detects the file type and partitions it into semantically meaningful chunks via `unstructured` (layout-aware for PDFs, native structure-aware for `.docx`), with table detection either way.
 3. `vectorstore.py` embeds the chunks (FastEmbed) and indexes them in FAISS.
 4. A user message hits `/chat` → a LangGraph agent (`agent.py`) decides whether to call the `search_documents` tool (`tools.py`).
 5. Retrieved chunks are grounded into the LLM's response, and the top-scoring source is returned alongside the answer.
@@ -75,7 +78,7 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 | LLM inference    | Groq (`llama-3.1-8b-instant`) |
 | Embeddings       | FastEmbed (`BAAI/bge-small-en-v1.5`, ONNX runtime) |
 | Vector store     | FAISS |
-| PDF parsing      | Unstructured (`partition_pdf`, hi-res + table detection) |
+| Document parsing | Unstructured (`partition` auto-detects file type — hi-res + table detection for PDFs, native structure parsing for `.docx`) 
 | Conversation memory | SQLite (via LangGraph's `SqliteSaver`) |
 
 ---
@@ -89,7 +92,7 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 ├── backend/
 │   ├── config.py          # Paths, env vars, constants
 │   ├── vectorstore.py     # Embeddings + FAISS index management
-│   ├── ingestion.py       # PDF upload handling + chunking
+│   ├── ingestion.py       # Document upload handling + chunking (PDF, DOCX)
 │   ├── tools.py           # Agent tool: search_documents
 │   ├── agent.py           # LLM, checkpointer, agent construction
 │   ├── models.py          # Pydantic request/response schemas
@@ -150,7 +153,7 @@ Visit `http://localhost:8501` in your browser.
 
 | Method | Endpoint   | Description |
 |--------|------------|--------------|
-| `POST` | `/upload`  | Upload one or more PDFs to be parsed, chunked, and indexed |
+| `POST` | `/upload`  | Upload one or more PDF or Word (`.docx`) documents to be parsed, chunked, and indexed |
 | `POST` | `/chat`    | Send a message + `thread_id`; returns an answer and its source |
 | `GET`  | `/health`  | Health check — reports whether an index has been built |
 
