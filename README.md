@@ -33,27 +33,28 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 ## 🏗️ Architecture
 
 \```
-                    ┌──────────────────────┐
-                    │   Streamlit Frontend │
-                    │       (app.py)       │
-                    └──────────┬───────────┘
-                               │ HTTP (REST)
-                               ▼
-                    ┌──────────────────────┐
-                    │   FastAPI Backend    │
-                    │      (main.py)       │
-                    └──────────┬───────────┘
-             ┌─────────────────┼─────────────────┐
-             ▼                 ▼                 ▼
-     ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-     │  ingestion.py │ │ vectorstore.py│ │    agent.py   │
-     │  PDF → chunks │ │ FAISS + embed │ │  LLM + memory │
-     └───────────────┘ └───────────────┘ └───────┬───────┘
-                                                  │
-                                          ┌───────▼────────┐
-                                          │    tools.py    │
-                                          │ search_document│
-                                          └────────────────┘
+┌──────────────────────┐
+│   Streamlit Frontend  │
+│      (app.py)         │
+└──────────┬───────────┘
+           │ HTTP (REST)
+           ▼
+┌──────────────────────┐
+│   FastAPI Backend     │
+│      (main.py)        │
+└──────────┬───────────┘
+           │
+┌──────────┼──────────────────────┐
+▼                                  ▼                  ▼
+┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+│ ingestion.py  │   │ vectorstore.py│   │   agent.py     │
+│ PDF → chunks  │   │ FAISS + embed │   │  LLM + memory  │
+└───────────────┘   └───────────────┘   └───────┬───────┘
+                                                 │
+                                         ┌───────▼────────┐
+                                         │    tools.py     │
+                                         │ search_documents│
+                                         └─────────────────┘
 \```
 
 **Flow:**
