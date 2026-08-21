@@ -33,28 +33,27 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 ## 🏗️ Architecture
 
 ```
-┌──────────────────────┐
-│   Streamlit Frontend  │
-│      (app.py)         │
-└──────────┬───────────┘
-           │ HTTP (REST)
-           ▼
-┌──────────────────────┐
-│   FastAPI Backend     │
-│      (main.py)        │
-└──────────┬───────────┘
-           │
-┌──────────┼──────────────────────┐
-▼                                  ▼                  ▼
-┌───────────────┐   ┌───────────────┐   ┌───────────────┐
-│ ingestion.py  │   │ vectorstore.py│   │   agent.py     │
-│ PDF → chunks  │   │ FAISS + embed │   │  LLM + memory  │
-└───────────────┘   └───────────────┘   └───────┬───────┘
-                                                 │
-                                         ┌───────▼────────┐
-                                         │    tools.py     │
-                                         │ search_documents│
-                                         └─────────────────┘
+                    ┌──────────────────────┐
+                    │   Streamlit Frontend │
+                    │       (app.py)       │
+                    └──────────┬───────────┘
+                               │ HTTP (REST)
+                               ▼
+                    ┌──────────────────────┐
+                    │   FastAPI Backend    │
+                    │      (main.py)       │
+                    └──────────┬───────────┘
+             ┌─────────────────┼─────────────────┐
+             ▼                 ▼                 ▼
+     ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+     │  ingestion.py │ │ vectorstore.py│ │    agent.py   │
+     │  PDF → chunks │ │ FAISS + embed │ │  LLM + memory │
+     └───────────────┘ └───────────────┘ └────────┬──────┘
+                                                  │
+                                          ┌───────▼────────┐
+                                          │    tools.py    │
+                                          │ search_document│
+                                          └────────────────┘
 ```
 
 **Flow:**
@@ -85,20 +84,20 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 
 \```
 .
-├── .env                    # shared env vars — both backend and frontend read from this
+├── .env                   # shared env vars — both backend and frontend read from 
+|
 ├── backend/
-│   ├── config.py
-│   ├── vectorstore.py
-│   ├── ingestion.py
-│   ├── tools.py
-│   ├── agent.py
-│   ├── models.py
-│   ├── main.py
+│   ├── config.py          # Paths, env vars, constants
+│   ├── vectorstore.py     # Embeddings + FAISS index management
+│   ├── ingestion.py       # PDF upload handling + chunking
+│   ├── tools.py           # Agent tool: search_documents
+│   ├── agent.py           # LLM, checkpointer, agent construction
+│   ├── models.py          # Pydantic request/response schemas
+│   ├── main.py            # FastAPI app + routes
 │   └── requirements.txt
 │
 └── frontend/
-    ├── app.py
-    └── requirements.txt
+    └── app.py             # Streamlit chat interface
 \```
 
 ---
