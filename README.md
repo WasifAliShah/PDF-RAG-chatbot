@@ -32,7 +32,7 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 
 ## 🏗️ Architecture
 
-\```
+```
 ┌──────────────────────┐
 │   Streamlit Frontend  │
 │      (app.py)         │
@@ -55,7 +55,7 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
                                          │    tools.py     │
                                          │ search_documents│
                                          └─────────────────┘
-\```
+```
 
 **Flow:**
 1. A PDF is uploaded through the Streamlit UI → sent to `/upload`.
