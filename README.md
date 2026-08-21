@@ -111,8 +111,8 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 
 ### 1. Clone the repo
 \```bash
-git clone https://github.com/<WasifAliShah>/<PDF-RAG-chatbot>.git
-cd <PDF-RAG-chatbot>
+git clone https://github.com/WasifAliShah/PDF-RAG-chatbot.git
+cd PDF-RAG-chatbot
 \```
 
 ### 2. Configure environment variables
@@ -179,9 +179,10 @@ Visit `http://localhost:8501` in your browser.
 - [ ] Split routes into `APIRouter`s as the API grows
 - [ ] Add automated tests for ingestion and retrieval
 - [ ] Docker Compose setup for one-command startup
-- [ ] Deploy demo (Render / Railway + Streamlit Cloud) -->
+- [ ] Deploy demo (Render / Railway + Streamlit Cloud) 
 
 ---
+-->
 
 ## 📄 License
 
