@@ -111,8 +111,8 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 
 ### 1. Clone the repo
 \```bash
-git clone https://github.com/<your-username>/<your-repo>.git
-cd <your-repo>
+git clone https://github.com/<WasifAliShah>/<PDF-RAG-chatbot>.git
+cd <PDF-RAG-chatbot>
 \```
 
 ### 2. Configure environment variables
