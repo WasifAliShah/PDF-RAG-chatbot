@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import ToolMessage, SystemMessage, HumanMessage
 
 import vectorstore
-from ingestion import save_uploaded_files, process_pdfs
+from ingestion import save_uploaded_files, process_documents
 from agent import agent, SYSTEM_PROMPT
 from models import ChatRequest, ChatResponse
 
@@ -24,7 +24,7 @@ app.add_middleware(
 @app.post("/upload")
 async def upload_pdfs(files: Annotated[List[UploadFile], File(...)]):
     saved_paths = save_uploaded_files(files)
-    new_chunks = process_pdfs(saved_paths)
+    new_chunks = process_documents(saved_paths)
 
     if new_chunks:
         vectorstore.add_documents(new_chunks)
