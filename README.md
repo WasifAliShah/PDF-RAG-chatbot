@@ -110,38 +110,38 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 - A [Groq API key](https://console.groq.com)
 
 ### 1. Clone the repo
-\```bash
+```bash
 git clone https://github.com/WasifAliShah/PDF-RAG-chatbot.git
 cd PDF-RAG-chatbot
-\```
+```
 
 ### 2. Configure environment variables
 Create a single `.env` file at the **project root** (the folder containing both `backend/` and `frontend/`):
-\```env
+```env
 GROQ_API_KEY=your_groq_api_key_here
 BACKEND_URL=http://localhost:8000
-\```
+```
 Both the backend and frontend read from this same file — `python-dotenv`'s `load_dotenv()` walks up from the current working directory until it finds a `.env`, so this works automatically as long as you launch each app from inside its own folder as shown below.
 
 ### 3. Set up the backend
-\```bash
+```bash
 cd backend
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload
-\```
+```
 The backend will run at `http://localhost:8000`.
 
 ### 4. Set up the frontend
 In a new terminal:
-\```bash
+```bash
 cd frontend
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 streamlit run app.py
-\```
+```
 Visit `http://localhost:8501` in your browser.
 
 ---
@@ -155,20 +155,20 @@ Visit `http://localhost:8501` in your browser.
 | `GET`  | `/health`  | Health check — reports whether an index has been built |
 
 **Example: `/chat` request**
-\```json
+```json
 {
   "message": "What does the document say about onboarding?",
   "thread_id": "a1b2c3d4"
 }
-\```
+```
 
 **Example: `/chat` response**
-\```json
+```json
 {
   "answer": "According to the document, onboarding takes place over the first two weeks...",
   "source": "employee_handbook.pdf, page 4"
 }
-\```
+```
 
 ---
 
