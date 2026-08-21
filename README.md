@@ -82,7 +82,7 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 
 ## 📁 Project Structure
 
-\```
+```
 .
 ├── .env                   # shared env vars — both backend and frontend read from 
 |
@@ -98,7 +98,7 @@ Built with a decoupled **FastAPI** backend and a **Streamlit** frontend, powered
 │
 └── frontend/
     └── app.py             # Streamlit chat interface
-\```
+```
 
 ---
 
@@ -171,14 +171,14 @@ Visit `http://localhost:8501` in your browser.
 
 ---
 
-## 🧭 Roadmap
+<!-- ## 🧭 Roadmap
 
 - [ ] Swap module-level globals for FastAPI dependency injection / `app.state`
 - [ ] Add `pydantic-settings` for validated configuration
 - [ ] Split routes into `APIRouter`s as the API grows
 - [ ] Add automated tests for ingestion and retrieval
 - [ ] Docker Compose setup for one-command startup
-- [ ] Deploy demo (Render / Railway + Streamlit Cloud)
+- [ ] Deploy demo (Render / Railway + Streamlit Cloud) -->
 
 ---
 
